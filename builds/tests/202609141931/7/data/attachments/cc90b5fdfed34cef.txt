@@ -1,0 +1,20 @@
+❌ Ошибка в тесте: Message: 
+Stacktrace:
+#0 0x5619a3a68aaa <unknown>
+#1 0x5619a3ae08b9 <unknown>
+#2 0x5619a3b332d5 <unknown>
+#3 0x5619a3b33561 <unknown>
+#4 0x5619a3b7c1f4 <unknown>
+#5 0x5619a3b7937a <unknown>
+#6 0x5619a3b26b59 <unknown>
+#7 0x5619a3b278a1 <unknown>
+#8 0x5619a36a219e <unknown>
+#9 0x5619a36943e1 <unknown>
+#10 0x5619a40015ea <unknown>
+#11 0x5619a3890483 <unknown>
+#12 0x5619a39bd3f8 <unknown>
+#13 0x5619a39bd348 <unknown>
+#14 0x5619a4019ee9 <unknown>
+#15 0x5619a401ebbc <unknown>
+#16 0x7fcc62395aa4 <unknown>
+#17 0x7fcc62422c6c <unknown>
