@@ -14,6 +14,7 @@
 - [Стек](#стек)
 - [Структура проекта](#структура-проекта)
 - [Установка](#установка)
+- [🐳 Запуск через Docker](#-запуск-через-docker)
 - [Запуск тестов локально](#запуск-тестов-локально)
 - [Allure Report](#allure-report)
 - [CI/CD](#cicd)
@@ -28,7 +29,7 @@
 Проект содержит набор UI-автотестов для проверки релизных типов (release types).
 Тесты запускаются:
 
-- локально — вручную;
+- локально — вручную (в том числе через Docker);
 - в CI — по расписанию (каждые 2 часа), при пуше в `main`/`master` и вручную.
 
 Результаты прогонов публикуются в виде Allure-отчёта на GitHub Pages,
@@ -47,6 +48,7 @@
 | CI/CD | GitHub Actions |
 | Хостинг отчётов | GitHub Pages |
 | Уведомления | Slack Webhook |
+| Контейнеризация | Docker |
 
 ---
 
@@ -60,6 +62,7 @@ Tafel_Ui/
 ├── tests/
 │   └── test_release_types.py      # UI-тесты
 ├── allure-results/                # сырые результаты (генерируется)
+├── Dockerfile                     # образ с Python + Chromium + Allure
 ├── requirements.txt               # зависимости
 ├── send_allure_to_slack.py        # скрипт уведомления в Slack
 └── README.md
@@ -112,7 +115,121 @@ brew install allure
 
 ---
 
+## 🐳 Запуск через Docker
+
+Самый простой способ запустить тесты — использовать Docker. Образ уже содержит
+Python 3.12, Chromium, Chromedriver, Allure и все системные библиотеки,
+необходимые для работы headless-браузера. На хост-машине ничего доустанавливать
+не нужно.
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y \
+    wget unzip curl gnupg chromium chromium-driver default-jre \
+    libnss3 libxss1 libasound2 fonts-liberation libgbm1 xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Симлинки для Chrome (chromedriver уже в /usr/bin)
+RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
+    && ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable
+
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+
+RUN wget https://github.com/allure-framework/allure2/releases/download/2.32.0/allure-2.32.0.zip \
+    && unzip allure-2.32.0.zip -d /opt/ \
+    && ln -s /opt/allure-2.32.0/bin/allure /usr/local/bin/allure \
+    && rm allure-2.32.0.zip
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
+
+CMD ["pytest", "tests/test_release_types.py", "-v", "--headless", "--alluredir=allure-results", "--capture=no"]
+```
+
+### 1. Собрать образ
+
+```bash
+docker build -t tafel-ui-tests .
+```
+
+### 2. Запустить тесты
+
+**Вариант A — с сохранением результатов на хост-машину:**
+
+```bash
+docker run --rm \
+  -v "$(pwd)/allure-results:/app/allure-results" \
+  tafel-ui-tests
+```
+
+**Windows (PowerShell):**
+
+```powershell
+docker run --rm `
+  -v "${PWD}/allure-results:/app/allure-results" `
+  tafel-ui-tests
+```
+
+После прогона результаты окажутся в папке `allure-results/` на вашем компьютере —
+их можно открыть через `allure serve allure-results`.
+
+### 3. Открыть Allure-отчёт
+
+```bash
+allure serve allure-results
+```
+
+### 4. Полезные команды
+
+| Задача | Команда |
+|---|---|
+| Собрать образ | `docker build -t tafel-ui-tests .` |
+| Запустить тесты | `docker run --rm tafel-ui-tests` |
+| Запустить с сохранением результатов | `docker run --rm -v "$(pwd)/allure-results:/app/allure-results" tafel-ui-tests` |
+| Зайти внутрь контейнера | `docker run --rm -it tafel-ui-tests bash` |
+| Запустить конкретный тест | `docker run --rm tafel-ui-tests pytest tests/test_release_types.py -k "название" -v` |
+| Удалить образ | `docker rmi tafel-ui-tests` |
+
+### Альтернатива: docker-compose
+
+Если удобнее через `docker-compose.yml`:
+
+```yaml
+version: "3.9"
+
+services:
+  tests:
+    build: .
+    volumes:
+      - ./allure-results:/app/allure-results
+    command: >
+      pytest tests/test_release_types.py -v --headless
+      --alluredir=allure-results --capture=no
+```
+
+Запуск:
+
+```bash
+docker compose up --abort-on-container-exit
+```
+
+---
+
 ## Запуск тестов локально
+
+> Если не хотите использовать Docker — установите Chrome и Allure вручную
+> (см. [Установка](#установка)).
 
 ### Запуск всех тестов
 
@@ -189,6 +306,11 @@ Workflow: [`.github/workflows/tests.yml`](.github/workflows/tests.yml)
 8. Публикует отчёт в `gh-pages` (GitHub Pages).
 9. Отправляет уведомление в Slack.
 
+> 💡 В CI сейчас используется установка Chromium/Allure напрямую через `apt-get`
+> на раннере `ubuntu-latest`. При желании можно перейти на запуск внутри
+> Docker-образа (см. раздел [🐳 Запуск через Docker](#-запуск-через-docker)) —
+> это сделает окружение CI и локальной разработки идентичным.
+
 ### GitLab CI (если используется)
 
 Для GitLab создайте `.gitlab-ci.yml` в корне проекта:
@@ -238,6 +360,21 @@ pages:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 ```
 
+Либо, если хотите использовать тот же Docker-образ, что и локально:
+
+```yaml
+ui-tests:
+  stage: test
+  image: tafel-ui-tests:latest   # или собранный в предыдущем stage
+  script:
+    - pytest tests/test_release_types.py -v --headless --alluredir=allure-results || true
+    - allure generate allure-results -o public --clean
+  artifacts:
+    when: always
+    paths:
+      - public
+```
+
 После этого отчёт будет доступен по адресу GitLab Pages:
 `https://<username>.gitlab.io/<project>/`
 
@@ -262,6 +399,9 @@ export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
 export CHROME_BIN="/usr/bin/chromium"
 export CHROMEDRIVER_PATH="/usr/bin/chromedriver"
 ```
+
+При запуске через Docker эти переменные уже заданы внутри образа
+(`CHROME_BIN`, `CHROMEDRIVER_PATH`, `PYTHONUNBUFFERED`, `PYTHONIOENCODING`).
 
 ---
 
@@ -291,6 +431,7 @@ Report: https://kino1703.github.io/Tafel_Ui/builds/tests/202509151700/
 - [Selenium documentation](https://www.selenium.dev/documentation/)
 - [GitHub Actions documentation](https://docs.github.com/en/actions)
 - [GitLab CI documentation](https://docs.gitlab.com/ee/ci/)
+- [Docker documentation](https://docs.docker.com/)
 
 ---
 
