@@ -1,7 +1,7 @@
 # config.py
 class Config:
     # ===== Базовые настройки =====
-    BASE_URL = "https://qa-manufacture.lar.tech"
+    BASE_URL = "https://manufacture.lar.tech"
     TEST_USERNAME = "qa"
     TEST_PASSWORD = "qa"
     
