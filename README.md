@@ -62,8 +62,12 @@ Tafel_Ui/
 ├── tests/
 │   └── test_release_types.py      # UI-тесты
 ├── allure-results/                # сырые результаты (генерируется)
+├── allure-report/                 # HTML-отчёт (генерируется)
 ├── Dockerfile                     # образ с Python + Chromium + Allure
+├── .dockerignore                  # исключения из контекста сборки
+├── .env                           # локальные секреты (не коммитится)
 ├── requirements.txt               # зависимости
+├── conftest.py                    # фикстуры pytest
 ├── send_allure_to_slack.py        # скрипт уведомления в Slack
 └── README.md
 ```
@@ -118,7 +122,7 @@ brew install allure
 ## 🐳 Запуск через Docker
 
 Самый простой способ запустить тесты — использовать Docker. Образ уже содержит
-Python 3.12, Chromium, Chromedriver, Allure и все системные библиотеки,
+Python 3.12, Chromium, Chromedriver, Allure, JRE и все системные библиотеки,
 необходимые для работы headless-браузера. На хост-машине ничего доустанавливать
 не нужно.
 
@@ -127,8 +131,10 @@ Python 3.12, Chromium, Chromedriver, Allure и все системные биб�
 ```dockerfile
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y \
-    wget unzip curl gnupg chromium chromium-driver default-jre \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget unzip curl gnupg \
+    chromium chromium-driver \
+    default-jre-headless \
     libnss3 libxss1 libasound2 fonts-liberation libgbm1 xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -139,8 +145,8 @@ RUN ln -sf /usr/bin/chromium /usr/bin/google-chrome \
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-RUN wget https://github.com/allure-framework/allure2/releases/download/2.32.0/allure-2.32.0.zip \
-    && unzip allure-2.32.0.zip -d /opt/ \
+RUN wget -q https://github.com/allure-framework/allure2/releases/download/2.32.0/allure-2.32.0.zip \
+    && unzip -q allure-2.32.0.zip -d /opt/ \
     && ln -s /opt/allure-2.32.0/bin/allure /usr/local/bin/allure \
     && rm allure-2.32.0.zip
 
@@ -154,52 +160,120 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 
+# Дефолты для env-переменных (секреты прокидываются через -e / --env-file)
+ENV SLACK_WEBHOOK_URL=""
+ENV SLACK_TOKEN=""
+ENV SLACK_CHANNEL="#general"
+ENV TEST_USERNAME=""
+ENV TEST_PASSWORD=""
+
 CMD ["pytest", "tests/test_release_types.py", "-v", "--headless", "--alluredir=allure-results", "--capture=no"]
 ```
 
 ### 1. Собрать образ
 
 ```bash
-docker build -t tafel-ui-tests .
+docker build --no-cache -t tafel-ui-tests:latest .
 ```
 
-### 2. Запустить тесты
+### 2. Подготовить `.env`
 
-**Вариант A — с сохранением результатов на хост-машину:**
+Создайте в корне проекта файл `.env` с секретами и учётными данными:
+
+```env
+TEST_USERNAME=qa
+TEST_PASSWORD=qa
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
+SLACK_TOKEN=xoxb-...
+SLACK_CHANNEL=#qa-autotests
+```
+
+Файл добавлен в `.dockerignore` и внутрь образа не попадает — переменные
+прокидываются в контейнер при запуске через `--env-file`.
+
+### 3. Запустить тесты
+
+**Вариант A — только тесты, результат на хост:**
 
 ```bash
+mkdir -p allure-report
+
 docker run --rm \
-  -v "$(pwd)/allure-results:/app/allure-results" \
-  tafel-ui-tests
+  --env-file .env \
+  -v "$(pwd)/allure-report:/app/allure-report" \
+  tafel-ui-tests:latest
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
 docker run --rm `
-  -v "${PWD}/allure-results:/app/allure-results" `
-  tafel-ui-tests
+  --env-file .env `
+  -v "${PWD}/allure-report:/app/allure-report" `
+  tafel-ui-tests:latest
 ```
 
-После прогона результаты окажутся в папке `allure-results/` на вашем компьютере —
-их можно открыть через `allure serve allure-results`.
+**Вариант B — тесты + отправка отчёта в Slack:**
 
-### 3. Открыть Allure-отчёт
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/allure-report:/app/allure-report" \
+  tafel-ui-tests:latest \
+  sh -c "pytest tests/test_release_types.py -v --headless --alluredir=allure-results --capture=no && python send_allure_to_slack.py"
+```
+
+Если нужно отправлять отчёт в Slack **даже при падении тестов**, замените `&&` на `;`:
+
+```bash
+sh -c "pytest tests/test_release_types.py -v --headless --alluredir=allure-results --capture=no ; python send_allure_to_slack.py"
+```
+
+**Вариант C — только отправка в Slack** (если `allure-results` уже сформирован):
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/allure-results:/app/allure-results" \
+  -v "$(pwd)/allure-report:/app/allure-report" \
+  tafel-ui-tests:latest \
+  python send_allure_to_slack.py
+```
+
+### 4. Открыть Allure-отчёт
 
 ```bash
 allure serve allure-results
 ```
 
-### 4. Полезные команды
+### 5. Полезные команды
 
 | Задача | Команда |
 |---|---|
-| Собрать образ | `docker build -t tafel-ui-tests .` |
-| Запустить тесты | `docker run --rm tafel-ui-tests` |
-| Запустить с сохранением результатов | `docker run --rm -v "$(pwd)/allure-results:/app/allure-results" tafel-ui-tests` |
-| Зайти внутрь контейнера | `docker run --rm -it tafel-ui-tests bash` |
-| Запустить конкретный тест | `docker run --rm tafel-ui-tests pytest tests/test_release_types.py -k "название" -v` |
-| Удалить образ | `docker rmi tafel-ui-tests` |
+| Собрать образ с нуля | `docker build --no-cache -t tafel-ui-tests:latest .` |
+| Запустить тесты | `docker run --rm tafel-ui-tests:latest` |
+| Запустить с сохранением результатов | `docker run --rm -v "$(pwd)/allure-report:/app/allure-report" tafel-ui-tests:latest` |
+| Запустить + отправить в Slack | `docker run --rm --env-file .env -v "$(pwd)/allure-report:/app/allure-report" tafel-ui-tests:latest sh -c "pytest tests/test_release_types.py -v --headless --alluredir=allure-results --capture=no && python send_allure_to_slack.py"` |
+| Зайти внутрь контейнера | `docker run --rm -it tafel-ui-tests:latest bash` |
+| Запустить конкретный тест | `docker run --rm tafel-ui-tests:latest pytest tests/test_release_types.py -k "название" -v` |
+| Удалить образ | `docker rmi tafel-ui-tests:latest` |
+
+### Диагностика внутри контейнера
+
+Если что-то не работает — зайдите внутрь и проверьте компоненты:
+
+```bash
+docker run --rm -it tafel-ui-tests:latest bash
+```
+
+Внутри:
+
+```bash
+which chromedriver && chromedriver --version
+which chromium && chromium --version
+which allure && allure --version
+echo $CHROMEDRIVER_PATH
+```
 
 ### Альтернатива: docker-compose
 
@@ -211,8 +285,10 @@ version: "3.9"
 services:
   tests:
     build: .
+    env_file:
+      - .env
     volumes:
-      - ./allure-results:/app/allure-results
+      - ./allure-report:/app/allure-report
     command: >
       pytest tests/test_release_types.py -v --headless
       --alluredir=allure-results --capture=no
@@ -385,14 +461,25 @@ ui-tests:
 
 ## Переменные окружения
 
-В CI используются следующие секреты (Settings → Secrets and variables → Actions):
+При запуске через Docker переменные прокидываются из `.env`
+(флаг `--env-file .env`) либо через `-e`:
+
+| Переменная | Назначение |
+|---|---|
+| `TEST_USERNAME` | Логин для тестируемого приложения |
+| `TEST_PASSWORD` | Пароль для тестируемого приложения |
+| `SLACK_WEBHOOK_URL` | Webhook для отправки текстового отчёта в Slack |
+| `SLACK_TOKEN` | Токен бота для загрузки файла отчёта в Slack |
+| `SLACK_CHANNEL` | Канал Slack (по умолчанию `#general`) |
+
+В CI секреты задаются в Settings → Secrets and variables → Actions:
 
 | Переменная | Назначение |
 |---|---|
 | `SLACK_WEBHOOK_URL` | Webhook для отправки уведомлений в Slack |
 | `GITHUB_TOKEN` | Автоматически предоставляется GitHub Actions |
 
-Локально переменные можно задать в `.env` или экспортом:
+Локально (без Docker) переменные можно задать в `.env` или экспортом:
 
 ```bash
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
@@ -400,27 +487,61 @@ export CHROME_BIN="/usr/bin/chromium"
 export CHROMEDRIVER_PATH="/usr/bin/chromedriver"
 ```
 
-При запуске через Docker эти переменные уже заданы внутри образа
-(`CHROME_BIN`, `CHROMEDRIVER_PATH`, `PYTHONUNBUFFERED`, `PYTHONIOENCODING`).
+Внутри Docker-образа уже заданы `CHROME_BIN`, `CHROMEDRIVER_PATH`,
+`PYTHONUNBUFFERED`, `PYTHONIOENCODING` и дефолты для `SLACK_*`.
 
 ---
 
 ## Уведомления в Slack
 
-После каждого прогона тестов скрипт [`send_allure_to_slack.py`](send_allure_to_slack.py)
-отправляет в канал `#general` сообщение со ссылкой на свежий Allure-отчёт.
+После прогона тестов скрипт [`send_allure_to_slack.py`](send_allure_to_slack.py)
+формирует Allure-отчёт, упаковывает его в ZIP и отправляет в Slack:
+
+- **текстовое сообщение** со статистикой (total / passed / failed / broken)
+  и списком упавших тестов — через `SLACK_WEBHOOK_URL`;
+- **файл отчёта** (`allure-report.zip`) — через `SLACK_TOKEN` (Slack API `files.upload`).
+
+Если `SLACK_TOKEN` не задан, используется fallback-отправка файла через webhook.
 
 Пример сообщения:
 
 ```
-✅ UI Tests finished
-Report: https://kino1703.github.io/Tafel_Ui/builds/tests/202509151700/
+UI Test - PASSED
+* Total: 12
+* Passed: 12
+* Failed: 0
+* Broken: 0
 ```
 
 Для настройки:
 
-1. Создайте Incoming Webhook в Slack.
-2. Добавьте его в секреты репозитория как `SLACK_WEBHOOK_URL`.
+1. Создайте Incoming Webhook в Slack и положите его в `SLACK_WEBHOOK_URL`.
+2. Для отправки файла — создайте бота с правами `files:write`
+   и положите его токен в `SLACK_TOKEN`.
+3. Канал задаётся через `SLACK_CHANNEL` (по умолчанию `#general`).
+
+### Запуск отправки в Slack через Docker
+
+Одной командой (тесты + отправка):
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/allure-report:/app/allure-report" \
+  tafel-ui-tests:latest \
+  sh -c "pytest tests/test_release_types.py -v --headless --alluredir=allure-results --capture=no && python send_allure_to_slack.py"
+```
+
+Только отправка (если `allure-results` уже готов):
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/allure-results:/app/allure-results" \
+  -v "$(pwd)/allure-report:/app/allure-report" \
+  tafel-ui-tests:latest \
+  python send_allure_to_slack.py
+```
 
 ---
 
