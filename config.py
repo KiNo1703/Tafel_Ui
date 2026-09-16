@@ -2,7 +2,8 @@
 class Config:
     # ===== Базовые настройки =====
     BASE_URL = "https://manufacture.lar.tech"
-
+    TEST_USERNAME = "qa"
+    TEST_PASSWORD = "qa"
     
     # ===== Таймауты =====
     DEFAULT_TIMEOUT = 15
