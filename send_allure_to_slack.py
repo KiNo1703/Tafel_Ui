@@ -222,7 +222,7 @@ def format_slack_message(summary, failed_tests, allure_url=None):
         "attachments": [
             {
                 "color": color,
-                "title": f"Test Run - {status_text}",
+                "title": f"UI TEST - {status_text}",
                 "fields": [
                     {
                         "title": "Test Results",
