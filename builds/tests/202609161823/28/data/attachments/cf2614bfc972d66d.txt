@@ -1,0 +1,20 @@
+❌ Не удалось заполнить поля устройства 1: ❌ ОШИБКА: Не удалось заполнить поле 'devEui': Message: 
+Stacktrace:
+#0 0x56172bdd2d4a <unknown>
+#1 0x56172be40ff9 <unknown>
+#2 0x56172be94b5b <unknown>
+#3 0x56172be94e01 <unknown>
+#4 0x56172bedf174 <unknown>
+#5 0x56172bedc356 <unknown>
+#6 0x56172be87c6a <unknown>
+#7 0x56172be88881 <unknown>
+#8 0x56172b9f56eb <unknown>
+#9 0x56172b9e8751 <unknown>
+#10 0x56172c2e9dba <unknown>
+#11 0x56172bbfcf73 <unknown>
+#12 0x56172bd1cad1 <unknown>
+#13 0x56172bd1ca28 <unknown>
+#14 0x56172c303352 <unknown>
+#15 0x56172c309c2c <unknown>
+#16 0x7f51d4022aa4 <unknown>
+#17 0x7f51d40afc6c <unknown>
