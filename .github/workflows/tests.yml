@@ -40,7 +40,7 @@ jobs:
           sudo ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable
           echo "CHROME_BIN=/usr/bin/chromium" >> $GITHUB_ENV
           echo "CHROMEDRIVER_PATH=/usr/bin/chromedriver" >> $GITHUB_ENV
-          
+
           wget https://github.com/allure-framework/allure2/releases/download/2.32.0/allure-2.32.0.zip
           unzip allure-2.32.0.zip -d /opt/
           sudo ln -s /opt/allure-2.32.0/bin/allure /usr/local/bin/allure
@@ -49,12 +49,15 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      # ✅ Генерируем уникальное имя папки по дате и времени
       - name: Set report path
         id: report-path
         run: echo "path=builds/tests/$(date +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
 
       - name: Run tests
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
         run: pytest tests/test_release_types.py -v --headless --alluredir=allure-results --capture=no || true
 
       - name: Generate Allure Report
