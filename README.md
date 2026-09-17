@@ -181,11 +181,11 @@ docker build --no-cache -t tafel-ui-tests:latest .
 Создайте в корне проекта файл `.env` с секретами и учётными данными:
 
 ```env
-TEST_USERNAME=qa
-TEST_PASSWORD=qa
+TEST_USERNAME=xx
+TEST_PASSWORD=xx
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
 SLACK_TOKEN=xoxb-...
-SLACK_CHANNEL=#qa-autotests
+
 ```
 
 Файл добавлен в `.dockerignore` и внутрь образа не попадает — переменные
